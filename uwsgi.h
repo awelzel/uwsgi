@@ -1038,7 +1038,12 @@ struct uwsgi_plugin {
 	void (*on_load) (void);
 	int (*init) (void);
 	void (*post_init) (void);
+	// called right before forking a new worker
+	void (*pre_fork) (void);
+	// called in all workers (including ones that were not forked)
 	void (*post_fork) (void);
+	// called in parent when a new worker has been forked
+	void (*post_fork_parent) (void);
 	struct uwsgi_option *options;
 	void (*enable_threads) (void);
 	void (*init_thread) (int);

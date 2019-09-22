@@ -426,20 +426,53 @@ realstuff:
 	Py_Finalize();
 }
 
+void uwsgi_python_pre_fork() {
+#if PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION > 6
+	PyOS_BeforeFork();
+#endif
+}
+
+void uwsgi_python_post_fork_parent() {
+#if PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION > 6
+	PyOS_AfterFork_Parent();
+#endif
+}
+
+/*
+ * Helper to execute PyOS_AfterFork_Child or PyOS_AfterFork after a fork.
+ *
+ * For Python 3.7 and later, call PyOS_AfterFork_Child() unconditionally,
+ * otherwise call PyOS_AfterFork() if up.call_osafterfork is set.
+ *
+ * There's one special case we take care of here:
+ *
+ *   When post_fork() is called in a non master_process setup for worker_id 1,
+ *   AfterFork() should not be called as worker 1 was never actually forked
+ *   from anyone.
+ */
+void uwsgi_python_afterfork_child_helper() {
+	if (!uwsgi.master_process && uwsgi.mywid == 1) {
+		return;
+	}
+
+#if PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION >= 7
+	// Call PyOS_AfterFork_Child() unconditionally!
+	PyOS_AfterFork_Child();
+#else
+	// XXX: We should probably always do this!
+	if (up.call_osafterfork) {
+		PyOS_AfterFork();
+	}
+#endif
+}
+
 void uwsgi_python_post_fork() {
 
 	if (uwsgi.i_am_a_spooler) {
 		UWSGI_GET_GIL
-	}	
-
-	// reset python signal flags so child processes can trap signals
-	if (up.call_osafterfork) {
-#ifdef HAS_NOT_PyOS_AfterFork_Child
-		PyOS_AfterFork();
-#else
-                PyOS_AfterFork_Child();
-#endif
 	}
+
+	uwsgi_python_afterfork_child_helper();
 
 	uwsgi_python_reset_random_seed();
 
@@ -2047,13 +2080,9 @@ static int uwsgi_python_worker() {
 	if (!up.worker_override)
 		return 0;
 	UWSGI_GET_GIL;
-	// ensure signals can be used again from python
-	if (!up.call_osafterfork)
-#ifdef HAS_NOT_PyOS_AfterFork_Child
-		PyOS_AfterFork();
-#else
-                PyOS_AfterFork_Child();
-#endif
+
+	uwsgi_python_afterfork_child_helper();
+
 	FILE *pyfile = fopen(up.worker_override, "r");
 	if (!pyfile) {
 		uwsgi_error_open(up.worker_override);
@@ -2085,7 +2114,9 @@ struct uwsgi_plugin python_plugin = {
 	.alias = "python",
 	.modifier1 = 0,
 	.init = uwsgi_python_init,
+	.pre_fork = uwsgi_python_pre_fork,
 	.post_fork = uwsgi_python_post_fork,
+	.post_fork_parent = uwsgi_python_post_fork_parent,
 	.options = uwsgi_python_options,
 	.request = uwsgi_request_wsgi,
 	.after_request = uwsgi_after_request_wsgi,

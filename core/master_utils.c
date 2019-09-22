@@ -747,6 +747,12 @@ int uwsgi_respawn_worker(int wid) {
 		pthread_mutex_lock(&uwsgi.threaded_logger_lock);
 	}
 
+	for (i = 0; i < 256; i++) {
+		if (uwsgi.p[i]->pre_fork) {
+			uwsgi.p[i]->pre_fork();
+		}
+	}
+
 	pid_t pid = uwsgi_fork(uwsgi.workers[wid].name);
 
 	if (pid == 0) {
@@ -827,6 +833,11 @@ int uwsgi_respawn_worker(int wid) {
 		pthread_mutex_unlock(&uwsgi.threaded_logger_lock);
 	}
 
+	for (i = 0; i < 256; i++) {
+		if (uwsgi.p[i]->post_fork_parent) {
+			uwsgi.p[i]->post_fork_parent();
+		}
+	}
 
 	return 0;
 }
