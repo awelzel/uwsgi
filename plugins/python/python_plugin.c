@@ -428,6 +428,7 @@ realstuff:
 
 void uwsgi_python_pre_fork() {
 #if PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION > 6
+	PyThreadState_Swap(up.main_thread);
 	PyOS_BeforeFork();
 #endif
 }
